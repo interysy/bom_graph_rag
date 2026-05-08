@@ -1,0 +1,191 @@
+@prefix bom: <http://ibom.ai/ontology/bom#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+
+
+<http://ibom.ai/ontology/bom>
+    a owl:Ontology ;
+    rdfs:label "Apex Automotive BOM Ontology"@en ;
+    rdfs:comment "Ontology for multi-variant automotive bill of materials."@en .
+
+
+#################################################################
+# Classes
+#################################################################
+
+
+bom:Vehicle
+    a owl:Class ;
+    rdfs:label "Vehicle"@en ;
+    rdfs:comment "A specific car variant (e.g., Apex Sedan)."@en .
+
+bom:System
+    a owl:Class ;
+    rdfs:label "System"@en ;
+    rdfs:comment "Top-level engineering system (e.g., Engine, Chassis)."@en .
+
+bom:Assembly
+    a owl:Class ;
+    rdfs:label "Assembly"@en ;
+    rdfs:comment "Named assembly within a system (e.g., Cylinder Head Assembly)."@en .
+
+bom:Part
+    a owl:Class ;
+    rdfs:label "Part"@en ;
+    rdfs:comment "Leaf-level part (e.g., M8 Bolt)."@en .
+
+
+bom:PartLink
+    a owl:Class ;
+    rdfs:label "Part Link"@en ;
+    rdfs:comment "Intermediate node linking an Assembly to a Part with quantity."@en .
+
+
+
+#################################################################
+# Object Properties
+#################################################################
+
+
+
+bom:hasSystem
+    a owl:ObjectProperty ;
+    rdfs:label "has system"@en ;
+    rdfs:domain bom:Vehicle ;
+    rdfs:range bom:System ;
+    rdfs:comment "Vehicle contains system."@en .
+
+bom:hasAssembly
+    a owl:ObjectProperty ;
+    rdfs:label "has assembly"@en ;
+    rdfs:domain bom:System ;
+    rdfs:range bom:Assembly ;
+    rdfs:comment "System contains assembly."@en .
+
+
+# direct
+bom:hasPart
+    a owl:ObjectProperty ;
+    rdfs:label "has part"@en ;
+    rdfs:domain bom:Assembly ;
+    rdfs:range bom:Part ;
+    rdfs:comment "Assembly contains part."@en .
+
+
+# traverse extra node to find quantity
+bom:hasPartLink
+    a owl:ObjectProperty ;
+    rdfs:label "has part link"@en ;
+    rdfs:domain bom:Assembly ;
+    rdfs:range bom:PartLink ;
+    rdfs:comment "Assembly references PartLink nodes carrying quantity."@en .
+
+bom:partLinkHasPart
+    a owl:ObjectProperty ;
+    rdfs:label "part"@en ;
+    rdfs:domain bom:PartLink ;
+    rdfs:range bom:Part ;
+    rdfs:comment "Part referenced by a PartLink."@en .
+
+#################################################################
+# Inverse Object Properties
+#################################################################
+
+bom:isSystemOf
+    a owl:ObjectProperty ;
+    owl:inverseOf bom:hasSystem ;
+    rdfs:label "is system of"@en ;
+    rdfs:domain bom:System ;
+    rdfs:range bom:Vehicle .
+
+bom:isAssemblyOf
+    a owl:ObjectProperty ;
+    owl:inverseOf bom:hasAssembly ;
+    rdfs:label "is assembly of"@en ;
+    rdfs:domain bom:Assembly ;
+    rdfs:range bom:System .
+
+bom:isPartOf
+    a owl:ObjectProperty ;
+    owl:inverseOf bom:hasPart ;
+    rdfs:label "is part of"@en ;
+    rdfs:domain bom:Part ;
+    rdfs:range bom:Assembly .
+
+bom:isPartLinkOf
+    a owl:ObjectProperty ;
+    owl:inverseOf bom:hasPartLink ;
+    rdfs:label "is part link of"@en ;
+    rdfs:domain bom:PartLink ;
+    rdfs:range bom:Assembly .
+
+bom:partUsedInLink
+    a owl:ObjectProperty ;
+    owl:inverseOf bom:partLinkHasPart ;
+    rdfs:label "is part used in link"@en ;
+    rdfs:domain bom:Part ;
+    rdfs:range bom:PartLink .
+
+#################################################################
+# Datatype Properties
+#################################################################
+
+bom:quantity
+    a owl:DatatypeProperty ;
+    rdfs:label "quantity"@en ;
+    rdfs:domain bom:PartLink ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Number of units of this part in a specific assembly context."@en .
+
+bom:unitCostGBP
+    a owl:DatatypeProperty ;
+    rdfs:label "unit cost GBP"@en ;
+    rdfs:domain bom:Part ;
+    rdfs:range xsd:decimal ;
+    rdfs:comment "Cost per unit in GBP."@en .
+
+bom:unitWeightKg
+    a owl:DatatypeProperty ;
+    rdfs:label "unit weight kg"@en ;
+    rdfs:domain bom:Part ;
+    rdfs:range xsd:decimal ;
+    rdfs:comment "Weight per unit in kilograms."@en .
+
+bom:variantCode
+    a owl:DatatypeProperty ;
+    rdfs:label "variant code"@en ;
+    rdfs:domain bom:Vehicle ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Short variant code: SEDAN, SUV, COUPE, HATCH, ESTATE."@en .
+
+bom:systemName
+    a owl:DatatypeProperty ;
+    rdfs:label "system name"@en ;
+    rdfs:domain bom:System ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Human-readable system name."@en .
+
+bom:assemblyName
+    a owl:DatatypeProperty ;
+    rdfs:label "assembly name"@en ;
+    rdfs:domain bom:Assembly ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Human-readable assembly name."@en .
+
+bom:partName
+    a owl:DatatypeProperty ;
+    rdfs:label "part name"@en ;
+    rdfs:domain bom:Part ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Human-readable part name."@en .
+
+
+bom:partNumber
+    a owl:DatatypeProperty ;
+    rdfs:label "part number"@en ;
+    rdfs:domain bom:Part ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Manufacturer-style part number string (synthetic)."@en .
