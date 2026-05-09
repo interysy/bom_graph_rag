@@ -2,6 +2,18 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "0. Setup Fuseki Dataset",
+            "type": "shell",
+            "command": "curl",
+            "args": [
+                "-u", "admin:admin",
+                "http://host.docker.internal:3030/$/datasets",
+                "-X", "POST",
+                "-d", "dbName=apex-bom&dbType=tdb2"
+            ],
+            "problemMatcher": []
+        },
+        {
             "label": "1. Generate BOM TTL",
             "type": "shell",
             "command": "python",
