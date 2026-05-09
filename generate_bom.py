@@ -13,6 +13,13 @@ OUTPUT_PATH = "apex_bom.ttl"
 AMOUNT_OF_SHARED_PARTS = 80
 SHARED_PART_PROBABILITY = 0.2
 
+MINIMUM_COST = 0.05 
+MAXIMUM_COST = float(2500)
+
+
+MINIMUM_WEIGHT = 0.001
+MAXIMUM_WEIGHT = float(45)
+
 
 VARIANTS = [
         ("SEDAN", "Apex Meridian Sedan", "4-door, conventional boot"),
@@ -82,8 +89,8 @@ class Part(BaseModel):
     id: str
     name: str
     part_number: str
-    unit_cost_gbp: float = Field(ge=0.05, le=2500.0)
-    unit_weight_kg: float = Field(ge=0.001, le=45.0)
+    unit_cost_gbp: float = Field(ge=MINIMUM_COST, le=MAXIMUM_COST)
+    unit_weight_kg: float = Field(ge=MINIMUM_WEIGHT, le=MAXIMUM_WEIGHT)
 
     def to_ttl(self) -> List[str]:
         return [
@@ -187,6 +194,7 @@ class BOMGenerator:
         if part.id in self.registered_parts:
             return
         
+        logger.trace(f"Registering new Part: {part.id}")
         self.lines.extend(part.to_ttl())
         self.registered_parts.add(part.id)
 
@@ -195,6 +203,7 @@ class BOMGenerator:
         self.add_part(link.part)
         
         if link.id not in self.registered_links:
+            logger.trace(f"Linking part {link.part.id} via {link.id}")
             self.lines.extend(link.to_ttl())
             self.registered_links.add(link.id)
 
@@ -202,6 +211,7 @@ class BOMGenerator:
         if assembly.id in self.registered_assemblies:
             return
         
+        logger.debug(f"Adding Assembly to TTL: {assembly.id} ({len(assembly.part_links)} links)")
         self.lines.extend(assembly.to_ttl())
         
         for link in assembly.part_links:
@@ -217,6 +227,7 @@ class BOMGenerator:
         if system.id in self.registered_systems:
             return
         
+        logger.info(f"Adding System to TTL: {system.id}")
         self.lines.extend(system.to_ttl())
         
         for assembly in system.assemblies:
@@ -228,6 +239,7 @@ class BOMGenerator:
 
     def add_variant(self, variant: Variant):
         vehicle_uri = variant.uri
+        logger.info(f"Adding Variant to TTL: {variant.code} ({vehicle_uri})")
         
         self.lines.extend(variant.to_ttl())
         
@@ -242,7 +254,7 @@ class BOMGenerator:
         out = Path(file_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("\n".join(self.lines), encoding=self.ENCODING)
-        logger.info(f"Wrote {out}")
+        logger.success(f"Successfully wrote {len(self.lines)} lines to {out}")
 
     def output_stats(self):
         SEPERATOR_LENGTH = 30
@@ -263,6 +275,7 @@ def generate_shared_parts(amount : int = AMOUNT_OF_SHARED_PARTS):
     shared_parts : List[Part] = []
     names = ["M8 Bolt", "Wiring Clip", "Hex Nut", "Rubber Seal", "O-Ring", "12V Relay"]
 
+    logger.info(f"Initializing Shared Parts Pool (Size: {amount})")
     for i in range(amount):
         part_name = f"{random.choice(names)} {random.randint(100,999)}"
         part_id = f"part_shared_{i:04d}"
@@ -279,7 +292,7 @@ def generate_shared_parts(amount : int = AMOUNT_OF_SHARED_PARTS):
                 unit_weight_kg=unit_weight_kg
             )
         )
-
+    logger.debug("Shared parts pool generation complete.")
     return shared_parts
 
 
@@ -314,7 +327,7 @@ def main():
     shared_parts_pool = generate_shared_parts()
     
     for code, full_name, description in VARIANTS:
-        logger.info(f"Building Variant: {code}")
+        logger.info(f"--- Processing Variant: {code} ({full_name}) ---")
         variant = Variant(code=code, full_name=full_name, description=description)
         
         for system_name in SYSTEMS:
@@ -324,7 +337,7 @@ def main():
             system_id = uid(f"sys_{code.lower()}_{clean_sys_name}")
             system = System(id=system_id, name=system_name)
 
-            logger.debug(f"Building {system_name} for {code}")
+            logger.debug(f"Building System: {system_name} for {code} (ID: {system_id})")
 
             parts_per_assembly = random_numbers_sum_to_y(len(assemblies_for_system), total_system_parts)
 
@@ -337,10 +350,15 @@ def main():
                 )
 
                 amount_of_parts_for_assembly = parts_per_assembly[assembly_index]
+                logger.debug(f"Assembly: {assembly_name} | Target Parts: {amount_of_parts_for_assembly}")
+
+                shared_count = 0
+                unique_count = 0
 
                 for _ in range(amount_of_parts_for_assembly):
                     if random.random() < SHARED_PART_PROBABILITY:
                         selected_part = random.choice(shared_parts_pool)
+                        shared_count += 1
                     else:
                         part_id = uid(f"part_{code.lower()}")
                         selected_part = Part(
@@ -350,6 +368,7 @@ def main():
                             unit_cost_gbp=round(random.uniform(10.0, 1500.0), 2),
                             unit_weight_kg=round(random.uniform(0.1, 25.0), 3)
                         )
+                        unique_count += 1
                     
                     link = PartLink(
                         id=uid(f"link_{assembly.id}"),
@@ -358,6 +377,7 @@ def main():
                     )
                     assembly.part_links.append(link)
                 
+                logger.trace(f"Completed {assembly_name}: {shared_count} shared, {unique_count} unique parts.")
                 system.assemblies.append(assembly)
             variant.systems.append(system)
             
