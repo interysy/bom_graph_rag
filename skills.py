@@ -46,6 +46,15 @@ class SystemWeightEntry(BaseModel):
         return f"{self.system_name}: {self.total_weight_kg:.2f}kg"
 
 
+class SystemCostEntry(BaseModel): 
+    system_name : str
+    total_cost : float
+
+    def __str__(self) -> str:
+        return f"{self.system_name}: £{self.total_cost:,.2f}"
+
+
+
 class HeaviestSystemResponse(BaseModel):
     skill: str = "heaviest_system"
     variant_code: Optional[str]
@@ -55,6 +64,44 @@ class HeaviestSystemResponse(BaseModel):
     def __str__(self) -> str:
         scope = f"for {self.variant_code}" if self.variant_code else "across the fleet"
         header = f"--- Top {self.top_n} Heaviest Systems {scope} ---"
+        if not self.systems:
+            return f"{header}\nNo data found."
+        
+        entries = "\n".join([f"  {i+1}. {entry}" for i, entry in enumerate(self.systems)])
+        return f"{header}\n{entries}"
+
+class CostliestSystemResponse(BaseModel): 
+    skill : str = "costliest_system"
+    variant_code : Optional[str] 
+    top_n : int 
+    systems : List[SystemCostEntry]
+
+    def __str__(self) -> str:
+        scope = f"for {self.variant_code}" if self.variant_code else "across the fleet"
+        header = f"--- Top {self.top_n} Costliest Systems {scope} ---"
+        if not self.systems:
+            return f"{header}\nNo data found."
+        
+        entries = "\n".join([f"  {i+1}. {entry}" for i, entry in enumerate(self.systems)])
+        return f"{header}\n{entries}"
+
+class SystemComplexityEntry(BaseModel):
+    system_name: str
+    total_parts: int
+
+    def __str__(self) -> str:
+        return f"{self.system_name}: {self.total_parts} parts"
+
+
+class MostComplexSystemResponse(BaseModel):
+    skill: str = "most_complex_system"
+    variant_code: Optional[str]
+    top_n: int
+    systems: List[SystemComplexityEntry]
+
+    def __str__(self) -> str:
+        scope = f"for {self.variant_code}" if self.variant_code else "across the fleet"
+        header = f"--- Top {self.top_n} Most Complex Systems {scope} ---"
         if not self.systems:
             return f"{header}\nNo data found."
         
@@ -225,6 +272,95 @@ def heaviest_system(variant_code: Optional[str] = None, top_n: int = 1) -> Heavi
         systems=results
     )
 
+
+def costliest_system(variant_code: Optional[str] = None, top_n: int = 1) -> CostliestSystemResponse:
+    variant_filter = ""
+
+    if variant_code:
+        variant_code = _normalize_variant_code(variant_code)
+        variant_filter = f'?vehicle bom:variantCode "{variant_code}" .'
+    
+    VARIABLE_SYSTEM_NAME = "systemName"
+    VARIABLE_COST = "totalCost"
+
+    query = f"""{BOM_PREFIX}
+        SELECT ?{VARIABLE_SYSTEM_NAME} (SUM(?qty * ?price) AS ?{VARIABLE_COST})
+        WHERE {{
+            ?vehicle bom:hasSystem ?system .
+            {variant_filter}
+            ?system   bom:systemName   ?{VARIABLE_SYSTEM_NAME} ;
+                      bom:hasAssembly  ?assembly .
+            ?assembly bom:hasPartLink  ?partLink .
+            ?partLink bom:part         ?part ;
+                      bom:quantity     ?qty .
+            ?part     bom:unitCostGBP    ?price .
+        }}
+        GROUP BY ?{VARIABLE_SYSTEM_NAME}
+        ORDER BY DESC(?{VARIABLE_COST})
+        LIMIT {top_n}
+    """
+
+    rows = _run_sparql(query)
+
+    
+    results = []
+    for row in rows:
+        results.append(
+            SystemCostEntry(
+                system_name=_binding_value(row, VARIABLE_SYSTEM_NAME),
+                total_cost=round(float(_binding_value(row, VARIABLE_COST, 0)), 2)
+            )
+        )
+
+    return CostliestSystemResponse(
+        variant_code=variant_code,
+        top_n=top_n,
+        systems=results
+    )
+
+
+def most_complex_system(variant_code: Optional[str] = None, top_n: int = 1) -> MostComplexSystemResponse:
+    variant_filter = ""
+
+    if variant_code:
+        variant_code = _normalize_variant_code(variant_code)
+        variant_filter = f'?vehicle bom:variantCode "{variant_code}" .'
+    
+    VARIABLE_SYSTEM_NAME = "systemName"
+    VARIABLE_COMPLEXITY = "totalParts"
+
+    query = f"""{BOM_PREFIX}
+        SELECT ?{VARIABLE_SYSTEM_NAME} (SUM(?qty) AS ?{VARIABLE_COMPLEXITY})
+        WHERE {{
+            ?vehicle bom:hasSystem ?system .
+            {variant_filter}
+            ?system   bom:systemName   ?{VARIABLE_SYSTEM_NAME} ;
+                      bom:hasAssembly  ?assembly .
+            ?assembly bom:hasPartLink  ?partLink .
+            ?partLink bom:quantity     ?qty .
+        }}
+        GROUP BY ?{VARIABLE_SYSTEM_NAME}
+        ORDER BY DESC(?{VARIABLE_COMPLEXITY})
+        LIMIT {top_n}
+    """
+
+    rows = _run_sparql(query)
+    
+    results = []
+    for row in rows:
+        results.append(
+            SystemComplexityEntry(
+                system_name=_binding_value(row, VARIABLE_SYSTEM_NAME),
+                total_parts=int(float(_binding_value(row, VARIABLE_COMPLEXITY, 0)))
+            )
+        )
+
+    return MostComplexSystemResponse(
+        variant_code=variant_code,
+        top_n=top_n,
+        systems=results
+    )
+
 SKILLS = {
     "count_parts": {
         "description": "Count the total number of parts (sum of quantities) in a vehicle variant's BOM.",
@@ -290,3 +426,10 @@ if __name__ == "__main__":
     print(count_unique_parts('SEDAN', 'Engine'))
     print(heaviest_system('SEDAN', 5))
     print(heaviest_system(top_n = 5))
+
+    print(costliest_system('SEDAN', 5))
+    print(costliest_system(top_n=5))
+
+
+    print(most_complex_system('SEDAN' , 5))
+    print(most_complex_system(top_n=5))
