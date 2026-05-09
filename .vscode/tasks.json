@@ -1,0 +1,54 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "1. Generate BOM TTL",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "generate_bom.py"
+            ],
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+        {
+            "label": "2. Load TTL to Fuseki",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "load_ttl.py"
+            ],
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+        {
+            "label": "Run Full BOM Pipeline",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "1. Generate BOM TTL",
+                "2. Load TTL to Fuseki"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}
