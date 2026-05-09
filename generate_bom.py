@@ -298,11 +298,9 @@ def generate_shared_parts(amount : int = AMOUNT_OF_SHARED_PARTS):
 
 # UTILITIES
 def esc(s: str) -> str:
-    """Escape quotes for Turtle string literals."""
     return s.replace('"', '\\"')
 
 def uid(prefix: str) -> str:
-    """Generate a short unique ID."""
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 def clean_id(text: str) -> str:
