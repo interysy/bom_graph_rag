@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "0. Setup Fuseki Dataset From Devcontainer",
+            "label": "1. Setup Fuseki Dataset",
             "type": "shell",
             "command": "python",
             "args": [
@@ -20,7 +20,7 @@
             }
         },
         {
-            "label": "1. Generate BOM TTL",
+            "label": "3. Generate BOM TTL",
             "type": "shell",
             "command": "python",
             "args": [
@@ -38,7 +38,7 @@
             }
         },
         {
-            "label": "2. Load TTL to Fuseki",
+            "label": "4. Load TTL to Fuseki",
             "type": "shell",
             "command": "python",
             "args": [
@@ -59,9 +59,10 @@
             "label": "Run Full BOM Pipeline",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "0.5 Clear DB",
-                "1. Generate BOM TTL",
-                "2. Load TTL to Fuseki"
+                "1. Setup Fuseki Dataset",
+                "2. Clear DB",
+                "3. Generate BOM TTL",
+                "4. Load TTL to Fuseki"
             ],
             "group": {
                 "kind": "build",
@@ -70,7 +71,7 @@
             "problemMatcher": []
         },
         {
-            "label": "0.5 Clear DB",
+            "label": "2. Clear DB",
             "type": "shell",
             "command": "python",
             "args": [
