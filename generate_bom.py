@@ -5,20 +5,32 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Tuple, Set
 import uuid
 
-
 # Constants
 
 RANDOM_SEED = "siemens_bom"
 OUTPUT_PATH = "apex_bom.ttl"
-AMOUNT_OF_SHARED_PARTS = 80
-SHARED_PART_PROBABILITY = 0.2
+AMOUNT_OF_SHARED_PARTS = 200
 
-MINIMUM_COST = 0.05 
+SHARED_PART_PROBABILITY = 0.5
+HEAVY_PART_PROBABILITY = 0.2
+
+MINIMUM_COST = 0.05
 MAXIMUM_COST = float(2500)
-
 
 MINIMUM_WEIGHT = 0.001
 MAXIMUM_WEIGHT = float(45)
+
+
+PART_HEAVY_COST_MIN_GBP = 500.0
+PART_HEAVY_COST_MAX_GBP = MAXIMUM_COST
+PART_HEAVY_WEIGHT_MIN_KG = 5.0
+PART_HEAVY_WEIGHT_MAX_KG = MAXIMUM_WEIGHT
+
+PART_LIGHT_COST_MIN_GBP = 0.50
+PART_LIGHT_COST_MAX_GBP = 50.0
+PART_LIGHT_WEIGHT_MIN_KG = 0.01
+PART_LIGHT_WEIGHT_MAX_KG = 2.0
+
 
 
 VARIANTS = [
@@ -33,52 +45,52 @@ SYSTEMS = [
         "Engine", "Transmission", "Chassis & Frame", "Suspension & Steering", "Brakes", "Body & Exterior", "Electrical & Electronics"
 ]
 
-ASSEMBLIES : Dict[str, Tuple[List[str], int]] = {
+ASSEMBLIES: Dict[str, Tuple[List[str], Tuple[int, int]]] = {
     "Engine": ([
         "Cylinder Block",
         "Cylinder Head",
         "Fuel Delivery",
         "Lubrication",
         "Cooling",
-    ], random.randint(int(80), int(120))),
+    ], (80, 120)),
     "Transmission": ([
         "Gearbox",
         "Driveshaft",
         "Differential",
         "Clutch",
-    ], random.randint(int(40), int(70))),
+    ], (40, 70)),
     "Chassis & Frame": ([
         "Front Subframe",
         "Rear Subframe",
         "Cross Members",
         "Underbody Rails",
-    ], random.randint(int(50), int(90))),
+    ], (50, 90)),
     "Suspension & Steering": ([
         "Front Strut",
         "Rear Multi Link",
         "Steering Column",
         "Power Steering",
-    ], random.randint(int(60), int(100))),
-    "Brakes": ([ 
-        "Front Caliper", 
-        "Rear Caliper", 
+    ], (60, 100)),
+    "Brakes": ([
+        "Front Caliper",
+        "Rear Caliper",
         "ABS Module",
-        "Brake Lines"
-    ], random.randint(int(30), int(50))),
+        "Brake Lines",
+    ], (30, 50)),
     "Body & Exterior": ([
         "Door Panels",
         "Bonnet",
-        "Boot/Tailgate", 
-        "Bumpers", 
-        "Glass"
-    ], random.randint(int(70), int(120))),
-    "Electrical & Electronics" : ([
-        "Wiring Harness", 
-        "Battery", 
-        "ECU", 
+        "Boot/Tailgate",
+        "Bumpers",
+        "Glass",
+    ], (70, 120)),
+    "Electrical & Electronics": ([
+        "Wiring Harness",
+        "Battery",
+        "ECU",
         "Lighting",
-        "Sensors"
-    ], random.randint(int(80), int(150))),
+        "Sensors",
+    ], (80, 150)),
 }
 
 
@@ -276,10 +288,10 @@ def generate_shared_parts(amount : int = AMOUNT_OF_SHARED_PARTS):
     names = ["M8 Bolt", "Wiring Clip", "Hex Nut", "Rubber Seal", "O-Ring", "12V Relay"]
 
     logger.info(f"Initializing Shared Parts Pool (Size: {amount})")
-    for i in range(amount):
+    for part_index in range(amount):
         part_name = f"{random.choice(names)} {random.randint(100,999)}"
-        part_id = f"part_shared_{i:04d}"
-        part_number = f"CM-SHARED-{i:04d}"
+        part_id = f"part_shared_{part_index:04d}"
+        part_number = f"CM-SHARED-{part_index:04d}"
         unit_cost_gbp = round(random.uniform(0.05, 5.0), 2)
         unit_weight_kg = round(random.uniform(0.001, 0.5), 3)
 
@@ -308,10 +320,21 @@ def clean_id(text: str) -> str:
     return text.lower().replace(" ", "_").replace("&", "and").replace("/", "_")
 
 
-def random_numbers_sum_to_y(x, y) -> List[int]:
-    nums = [random.random() for _ in range(x)]
-    s = sum(nums)
-    return [round(y * n / s) for n in nums]
+def random_numbers_sum_to_y(x: int, y: int) -> List[int]:
+    if x <= 0:
+        raise ValueError(f"Need at least one assembly, got {x}")
+    if y < x:
+        raise ValueError(f"Need at least {x} part slots for {x} assemblies, got {y}")
+
+    allocation = [1] * x
+    remaining = y - x
+    for _ in range(remaining):
+        allocation[random.randrange(x)] += 1
+
+    random.shuffle(allocation)
+    assert sum(allocation) == y
+    assert all(n >= 1 for n in allocation)
+    return allocation
 
 
 def main():
@@ -329,53 +352,91 @@ def main():
         variant = Variant(code=code, full_name=full_name, description=description)
         
         for system_name in SYSTEMS:
-            assemblies_for_system, total_system_parts = ASSEMBLIES[system_name]
-            
+            assemblies_for_system, (part_min, part_max) = ASSEMBLIES[system_name]
+            assembly_count = len(assemblies_for_system)
+            part_min = max(part_min, assembly_count)
+
             clean_sys_name = clean_id(system_name)
             system_id = uid(f"sys_{code.lower()}_{clean_sys_name}")
             system = System(id=system_id, name=system_name)
 
             logger.debug(f"Building System: {system_name} for {code} (ID: {system_id})")
 
-            parts_per_assembly = random_numbers_sum_to_y(len(assemblies_for_system), total_system_parts)
+            if part_min > part_max:
+                raise ValueError(
+                    f"{system_name}: part count range ({part_min}, {part_max}) cannot satisfy "
+                    f"{assembly_count} assemblies"
+                )
+            total_system_parts = random.randint(part_min, part_max)
+
+            parts_per_assembly_targets = random_numbers_sum_to_y(assembly_count, total_system_parts)
 
             for assembly_index, assembly_name in enumerate(assemblies_for_system): 
-                
                 clean_assy_name = clean_id(assembly_name)
                 assembly = Assembly(
                     id=uid(f"assy_{system_id}_{clean_assy_name}"),
                     name=assembly_name
                 )
 
-                amount_of_parts_for_assembly = parts_per_assembly[assembly_index]
-                logger.debug(f"Assembly: {assembly_name} | Target Parts: {amount_of_parts_for_assembly}")
+                target_quantity = parts_per_assembly_targets[assembly_index]
+                current_quantity = 0
+                
+                logger.debug(f"Assembly: {assembly_name} | Target Quantity: {target_quantity}")
 
                 shared_count = 0
                 unique_count = 0
+                
 
-                for _ in range(amount_of_parts_for_assembly):
+                while current_quantity < target_quantity:
+
+                    remaining_needed = target_quantity - current_quantity
+                    quantity = min(random.randint(1, 5), remaining_needed)
+
                     if random.random() < SHARED_PART_PROBABILITY:
                         selected_part = random.choice(shared_parts_pool)
                         shared_count += 1
                     else:
                         part_id = uid(f"part_{code.lower()}")
+                        
+                        is_heavy = random.random() < HEAVY_PART_PROBABILITY
+
+                        if is_heavy:
+                            unit_cost_gbp = round(
+                                random.uniform(PART_HEAVY_COST_MIN_GBP, PART_HEAVY_COST_MAX_GBP),
+                                2,
+                            )
+                            unit_weight_kg = round(
+                                random.uniform(PART_HEAVY_WEIGHT_MIN_KG, PART_HEAVY_WEIGHT_MAX_KG),
+                                3,
+                            )
+                        else:
+                            unit_cost_gbp = round(
+                                random.uniform(PART_LIGHT_COST_MIN_GBP, PART_LIGHT_COST_MAX_GBP),
+                                2,
+                            )
+                            unit_weight_kg = round(
+                                random.uniform(PART_LIGHT_WEIGHT_MIN_KG, PART_LIGHT_WEIGHT_MAX_KG),
+                                3,
+                            )
+
                         selected_part = Part(
                             id=part_id,
                             name=f"{assembly_name} Component {part_id}",
                             part_number=f"APX-{code}-{random.randint(10000, 99999)}",
-                            unit_cost_gbp=round(random.uniform(10.0, 1500.0), 2),
-                            unit_weight_kg=round(random.uniform(0.1, 25.0), 3)
+                            unit_cost_gbp=unit_cost_gbp,
+                            unit_weight_kg=unit_weight_kg
                         )
                         unique_count += 1
                     
                     link = PartLink(
                         id=uid(f"link_{assembly.id}"),
                         part=selected_part,
-                        quantity=random.randint(1, 5)
+                        quantity=quantity
                     )
                     assembly.part_links.append(link)
-                
-                logger.trace(f"Completed {assembly_name}: {shared_count} shared, {unique_count} unique parts.")
+                    current_quantity += quantity
+            
+                logger.trace(f"Completed {assembly_name}: Total Qty {current_quantity} ({shared_count} shared links, {unique_count} unique links).")
                 system.assemblies.append(assembly)
             variant.systems.append(system)
             
@@ -383,6 +444,6 @@ def main():
 
     generator.save(OUTPUT_PATH)
     generator.output_stats()
-
+    
 if __name__ == "__main__":
     main()
