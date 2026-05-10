@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+.git
+fuseki-data
+.devcontainer
+.vscode
+*.md
+ontology.ttf
+apex_bom.ttl
+test.ttf
+docker-compose.yaml
