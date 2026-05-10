@@ -8,7 +8,8 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY agent.py skills.py generate_bom.py fuseki-utilities/load_ttl.py docker-entrypoint.sh .
+COPY agent.py skills.py generate_bom.py docker-entrypoint.sh .
+COPY fuseki-utilities ./fuseki-utilities
 
 RUN chmod +x docker-entrypoint.sh
 
