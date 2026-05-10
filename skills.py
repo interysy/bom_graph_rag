@@ -550,18 +550,26 @@ def compare_variants(
 
 SKILLS = {
     "count_parts": {
-        "description": "Count the total number of parts (sum of quantities) in a vehicle variant's BOM.",
+        "description": (
+            "Total BOM line items for one variant: sum of every part quantity (quantities multiply "
+            "counts). Use for 'how many parts in the BOM', totals within one vehicle. "
+            "Do not use for comparing variants or ranking systems—use compare_variants or "
+            "most_complex_system instead."
+        ),
         "parameters": {
             "variant_code": {
                 "type": "string",
                 "enum": VARIANT_CODES,
-                "description": "The car variant to query.",
+                "description": "Variant code: SEDAN, SUV, COUPE, HATCH, or ESTATE.",
                 "required": True,
             },
             "system_name": {
                 "type": "string",
                 "enum": SYSTEM_NAMES,
-                "description": "Optional: restrict count to a specific system (e.g. 'Engine').",
+                "description": (
+                    "If set, only count parts under this engineering system (e.g. 'Electrical & Electronics'). "
+                    "Omit to count the whole vehicle BOM."
+                ),
                 "required": False,
             },
         },
@@ -569,57 +577,71 @@ SKILLS = {
         "function": count_parts,
     },
     "count_unique_parts": {
-        "description": "Count distinct part URIs in a vehicle variant's BOM, optionally filtered by system.",
+        "description": (
+            "Distinct part identities for one variant (each part URI counted once; ignores quantity "
+            "multipliers). Use for 'how many unique parts'. Optional system filter scopes to one system."
+        ),
         "parameters": {
             "variant_code": {
                 "type": "string",
                 "enum": VARIANT_CODES,
-                "description": "The car variant to query.",
+                "description": "Variant code: SEDAN, SUV, COUPE, HATCH, or ESTATE.",
                 "required": True,
             },
             "system_name": {
                 "type": "string",
                 "enum": SYSTEM_NAMES,
-                "description": "Optional: restrict count to a specific system (e.g. 'Engine').",
+                "description": "If set, count distinct parts only within this system.",
                 "required": False,
             },
         },
         "returns": "integer — distinct part count",
         "function": count_unique_parts,
-    }, 
-    "heaviest_system" : {
-        "description" : "Fetch the heaviest system in the Graph or the heaviest system in the Graph for a specific Variant.",
-        "parameters" : {
+    },
+    "heaviest_system": {
+        "description": (
+            "Rank engineering systems by total weight (sum of quantity × unit weight in kg) for one "
+            "variant or, if variant_code is omitted, merged across all variants. Answers which "
+            "**system name** is heaviest overall—e.g. 'heaviest system across all variants'. "
+            "Do **not** use for total weight of one named system on one variant (e.g. Engine on HATCH); "
+            "use compare_variants with metric total_weight and system_name, then read the row for that variant."
+        ),
+        "parameters": {
             "variant_code": {
                 "type": "string",
                 "enum": VARIANT_CODES,
-                "description": "Optional: The car variant to query. If omitted, queries across the entire fleet.",
+                "description": (
+                    "If set, rank systems within this variant only. If omitted, aggregate weights across "
+                    "the fleet and rank system names (same system name summed over vehicles)."
+                ),
                 "required": False,
             },
             "top_n": {
                 "type": "integer",
-                "description": "Optional: The number of top heaviest systems to return (default is 1).",
+                "description": "How many top systems to return (default 1).",
                 "required": False,
-            }
+            },
         },
         "returns": "HeaviestSystemResponse object — list of top N systems and their weights in kg",
         "function": heaviest_system,
     },
     "costliest_system": {
         "description": (
-            "Fetch the system(s) with highest total material cost (sum of quantity × unit cost) "
-            "for one variant, or across the entire fleet if variant is omitted."
+            "Rank engineering systems by total material cost (sum of quantity × unit cost in GBP) for "
+            "one variant, or merged across the fleet if variant_code is omitted. Answers which **system** "
+            "is most expensive—e.g. 'most expensive system in the Coupé' means variant_code COUPE. "
+            "Do **not** use to compare variants on cost; use compare_variants with metric total_cost."
         ),
         "parameters": {
             "variant_code": {
                 "type": "string",
                 "enum": VARIANT_CODES,
-                "description": "Optional: the variant to query. If omitted, aggregates across all variants.",
+                "description": "If set, rank systems within this variant. If omitted, aggregate across all variants.",
                 "required": False,
             },
             "top_n": {
                 "type": "integer",
-                "description": "Optional: number of top costliest systems to return (default is 1).",
+                "description": "How many top systems to return (default 1).",
                 "required": False,
             },
         },
@@ -628,19 +650,23 @@ SKILLS = {
     },
     "most_complex_system": {
         "description": (
-            "Return the system(s) with the highest part count (sum of quantities over all PartLinks) "
-            "for one variant, or across the fleet if variant is omitted."
+            "Rank **engineering system types** (Engine, Suspension & Steering, …) by total part count "
+            "(sum of quantities) within one variant or merged across the fleet if variant_code is omitted. "
+            "Answers 'which system is most complex' or 'busiest system'. "
+            "Do **not** use when the user asks which **vehicle variant** has the most complex **named** "
+            "system (e.g. 'most complex Suspension across Sedan vs SUV')—for that, use compare_variants "
+            "with metric total_parts and system_name set to that system (e.g. 'Suspension & Steering')."
         ),
         "parameters": {
             "variant_code": {
                 "type": "string",
                 "enum": VARIANT_CODES,
-                "description": "Optional: the variant to query. If omitted, aggregates across all variants.",
+                "description": "If set, rank systems within this variant only. If omitted, aggregate across all variants.",
                 "required": False,
             },
             "top_n": {
                 "type": "integer",
-                "description": "Optional: number of top systems by complexity to return (default is 1).",
+                "description": "How many top systems to return (default 1).",
                 "required": False,
             },
         },
@@ -649,20 +675,30 @@ SKILLS = {
     },
     "compare_variants": {
         "description": (
-            "Compare all five Apex variants (SEDAN, SUV, COUPE, HATCH, ESTATE) on one metric: "
-            "total_parts (sum of BOM quantities), total_weight (kg), or total_cost (GBP material cost)."
+            "Compare **all five** Apex variants on one aggregate metric for the whole BOM or for a **single** "
+            "engineering system. Use when the question asks to compare variants, rank variants, or asks "
+            "which variant wins on cost/weight/part count—including for one named system only "
+            "(set system_name, e.g. total_parts for Suspension & Steering to find which variant has the "
+            "most complex suspension). Use metric total_weight + system_name for total weight of that system "
+            "per variant (e.g. Engine weight on Hatchback vs others). "
+            "Do **not** use for 'which system is heaviest in one car'—use heaviest_system or costliest_system."
         ),
         "parameters": {
             "metric": {
                 "type": "string",
                 "enum": COMPARE_METRICS,
-                "description": "Metric to compare across variants.",
+                "description": (
+                    "total_parts: sum of BOM quantities; total_weight: kg; total_cost: GBP material cost."
+                ),
                 "required": True,
             },
             "system_name": {
                 "type": "string",
                 "enum": SYSTEM_NAMES,
-                "description": "Optional: limit the comparison to one system (e.g. Engine).",
+                "description": (
+                    "If set, aggregate only within this system for each variant. Omit to compare whole-vehicle "
+                    "totals."
+                ),
                 "required": False,
             },
         },
