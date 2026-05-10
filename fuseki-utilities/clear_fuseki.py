@@ -35,6 +35,7 @@ def clear_dataset():
             update_endpoint,
             data=CLEAR_COMMAND_PAYLOAD,
             auth=AUTH_HEADER,
+            timeout=120,
         )
         if response.status_code in SUCCESS_STATUS_CODES:
             logger.success("✅ Dataset cleared.")

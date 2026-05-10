@@ -4,14 +4,20 @@
         {
             "label": "0. Setup Fuseki Dataset From Devcontainer",
             "type": "shell",
-            "command": "curl",
+            "command": "python",
             "args": [
-                "-u", "admin:admin",
-                "-X", "POST",
-                "http://${env:FUSEKI_HOST}:${env:FUSEKI_PORT}/$/datasets",
-                "-d", "dbName=apex-bom&dbType=tdb2"
+                "fuseki-utilities/setup_fuseki.py"
             ],
-            "problemMatcher": []
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": true,
+                "clear": false
+            }
         },
         {
             "label": "1. Generate BOM TTL",
