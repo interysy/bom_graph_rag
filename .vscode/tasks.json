@@ -2,13 +2,13 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "0. Setup Fuseki Dataset",
+            "label": "0. Setup Fuseki Dataset From Devcontainer",
             "type": "shell",
             "command": "curl",
             "args": [
                 "-u", "admin:admin",
-                "http://host.docker.internal:3030/$/datasets",
                 "-X", "POST",
+                "http://${env:FUSEKI_HOST}:${env:FUSEKI_PORT}/$/datasets",
                 "-d", "dbName=apex-bom&dbType=tdb2"
             ],
             "problemMatcher": []
@@ -36,7 +36,7 @@
             "type": "shell",
             "command": "python",
             "args": [
-                "load_ttl.py"
+                "fuseki-utilities/load_ttl.py"
             ],
             "group": "build",
             "problemMatcher": [],
@@ -61,6 +61,24 @@
                 "isDefault": true
             },
             "problemMatcher": []
-        }
+        },
+        {
+            "label": "Clear DB",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "fuseki-utilities/clear_fuseki.py"
+            ],
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
     ]
 }
