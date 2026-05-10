@@ -59,6 +59,7 @@
             "label": "Run Full BOM Pipeline",
             "dependsOrder": "sequence",
             "dependsOn": [
+                "0.5 Clear DB",
                 "1. Generate BOM TTL",
                 "2. Load TTL to Fuseki"
             ],
@@ -69,7 +70,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Clear DB",
+            "label": "0.5 Clear DB",
             "type": "shell",
             "command": "python",
             "args": [
