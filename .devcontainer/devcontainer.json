@@ -1,7 +1,7 @@
 {
 	"name": "graph-rag-bom-devcontainer",
 	"image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
-	"postCreateCommand": "python -m pip install --upgrade pip && pip install -r requirements.txt requests rdflib python-dotenv && mkdir -p fuseki-data",
+	"postCreateCommand": "python -m pip install --upgrade pip && pip install -r requirements.txt && mkdir -p fuseki-data",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -24,6 +24,9 @@
 			}
 		}
 	},
-    "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+	"runArgs": [
+		"--add-host=host.docker.internal:host-gateway",
+		"--env-file=${localWorkspaceFolder}/.env"
+	],
 	"remoteUser": "root"
 }
