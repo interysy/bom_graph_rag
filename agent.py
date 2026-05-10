@@ -94,13 +94,14 @@ def _skill_schemas_json(tools_schema: List[Dict[str, Any]]) -> str:
 
 class LangChainBOMAgent:
 
-    OLLAMA_MODEL_KEY = "OLLAMA_MODEL"
+    USE_OLLAMA_KEY = "USE_OLLAMA"
     OLLAMA_HOST_KEY = "OLLAMA_HOST"
     OLLAMA_PORT_KEY = "OLLAMA_PORT"
+    LLM_MODEL_KEY = "LLM_MODEL"
 
     def __init__(self, model: Optional[str] = None):
-        self.use_ollama = _env_bool(self.OLLAMA_MODEL_KEY, default=True)
-        self.llm = self._create_chat_llm(model)
+        self.use_ollama = _env_bool(self.USE_OLLAMA_KEY, default=True)
+        self.llm = self._create_chat_llm(os.getenv(self.LLM_MODEL_KEY))
 
         self.tools_schema = self._build_tool_definitions()
         self.tool_llm = self.llm.bind_tools(self.tools_schema)
@@ -118,9 +119,9 @@ class LangChainBOMAgent:
         if explicit and explicit.strip():
             m = explicit.strip()
         elif self.use_ollama:
-            m = os.getenv("OLLAMA_CHAT_MODEL", DEFAULT_OLLAMA_CHAT_MODEL).strip()
+            m = os.getenv("LLM_MODEL", DEFAULT_OLLAMA_CHAT_MODEL).strip()
         else:
-            m = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_CHAT_MODEL).strip()
+            m = os.getenv("LLM_MODEL", DEFAULT_OPENAI_CHAT_MODEL).strip()
 
         if self.use_ollama:
             if not m.startswith("ollama/"):
