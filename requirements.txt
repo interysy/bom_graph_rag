@@ -1,3 +1,5 @@
 pydantic
 requests
-ollama
+loguru
+litellm
+python-dotenv
