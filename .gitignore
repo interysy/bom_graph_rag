@@ -1,3 +1,4 @@
 fuseki-data
 apex-bom.ttl
 .mypy_cache
+.env
