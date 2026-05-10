@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import os
 import requests
 from loguru import logger
@@ -163,6 +163,15 @@ class CompareVariantsResponse(BaseModel):
         entries = "\n".join(f"  {e}" for e in self.variants)
         return f"{header}\n{entries}"
 
+
+SkillResponseUnion = Union[
+    CompareVariantsResponse,
+    MostComplexSystemResponse,
+    CostliestSystemResponse,
+    HeaviestSystemResponse,
+    UniquePartCountResponse,
+    PartCountResponse,
+]
 
 # UTILITIES
 def _normalize_variant_code(variant_code: str) -> str:
@@ -680,15 +689,15 @@ if __name__ == "__main__":
 
 
 
-    # print(count_unique_parts('SEDAN', 'Engine'))
-    # print(heaviest_system('SEDAN', 5))
-    # print(heaviest_system(top_n = 5))
+    print(count_unique_parts('SEDAN', 'Engine'))
+    print(heaviest_system('SEDAN', 5))
+    print(heaviest_system(top_n = 5))
 
-    # print(costliest_system('SEDAN', 5))
-    # print(costliest_system(top_n=5))
+    print(costliest_system('SEDAN', 5))
+    print(costliest_system(top_n=5))
 
 
-    # print(most_complex_system('SEDAN' , 5))
-    # print(most_complex_system(top_n=5))
-    # print(compare_variants("total_cost"))
-    # print(compare_variants("total_weight", "Engine"))
+    print(most_complex_system('SEDAN' , 5))
+    print(most_complex_system(top_n=5))
+    print(compare_variants("total_cost"))
+    print(compare_variants("total_weight", "Engine"))
