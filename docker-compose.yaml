@@ -12,6 +12,23 @@ services:
       - apex-net
     restart: unless-stopped
 
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apex-agent
+    stdin_open: true
+    tty: true
+    environment:
+      - FUSEKI_HOST=host.docker.internal
+      - FUSEKI_PORT=3030
+    depends_on:
+      - fuseki
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - apex-net
+
 networks:
   apex-net:
     driver: bridge
