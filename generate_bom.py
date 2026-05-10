@@ -40,45 +40,45 @@ ASSEMBLIES : Dict[str, Tuple[List[str], int]] = {
         "Fuel Delivery",
         "Lubrication",
         "Cooling",
-    ], 80),
+    ], random.randint(int(80), int(120))),
     "Transmission": ([
         "Gearbox",
         "Driveshaft",
         "Differential",
         "Clutch",
-    ], 40),
+    ], random.randint(int(40), int(70))),
     "Chassis & Frame": ([
         "Front Subframe",
         "Rear Subframe",
         "Cross Members",
         "Underbody Rails",
-    ], 50),
+    ], random.randint(int(50), int(90))),
     "Suspension & Steering": ([
         "Front Strut",
         "Rear Multi Link",
         "Steering Column",
         "Power Steering",
-    ], 60),
+    ], random.randint(int(60), int(100))),
     "Brakes": ([ 
         "Front Caliper", 
         "Rear Caliper", 
         "ABS Module",
         "Brake Lines"
-    ], 30),
+    ], random.randint(int(30), int(50))),
     "Body & Exterior": ([
         "Door Panels",
         "Bonnet",
         "Boot/Tailgate", 
         "Bumpers", 
         "Glass"
-    ], 70),
+    ], random.randint(int(70), int(120))),
     "Electrical & Electronics" : ([
         "Wiring Harness", 
         "Battery", 
         "ECU", 
         "Lighting",
         "Sensors"
-    ],80)
+    ], random.randint(int(80), int(150))),
 }
 
 
