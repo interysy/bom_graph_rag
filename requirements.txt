@@ -3,3 +3,6 @@ requests
 loguru
 litellm
 python-dotenv
+langchain-core
+langchain-community
+langchain-litellm
