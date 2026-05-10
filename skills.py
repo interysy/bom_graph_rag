@@ -1,17 +1,42 @@
-import os
 from typing import Any, Dict, List, Optional
+import os
 import requests
 from loguru import logger
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+from generate_bom import SYSTEMS
+
+ENV_VARIABLE_FUSEKI_HOST = "FUSEKI_HOST"
+ENV_VARIABLE_FUSEKI_PORT = "FUSEKI_PORT"
 
 BOM_PREFIX = "PREFIX bom: <http://ibom.ai/ontology/bom#>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n"
-VALID_VARIANTS = {"SEDAN", "SUV", "COUPE", "HATCH", "ESTATE"}
-VALID_SYSTEMS = [
-        "ENGINE", "TRANSMISSION", "CHASSIS & FRAME", "SUSPENSION & STEERING", "BRAKES", "BODY & EXTERIOR", "ELECTRICAL & ELECTRONICS"
-]
 
-FUSEKI_QUERY_ENDPOINT = "http://host.docker.internal:3030/apex-bom/sparql" 
+VARIANT_CODES = sorted(["COUPE", "ESTATE", "HATCH", "SEDAN", "SUV"])
+SYSTEM_NAMES = sorted(SYSTEMS)
+COMPARE_METRICS = sorted(["total_cost", "total_parts", "total_weight"])
+
 FUSEKI_TIMEOUT_SECONDS = 30
+
+
+load_dotenv()
+
+
+fuseki_host = os.getenv(ENV_VARIABLE_FUSEKI_HOST)
+fuseki_port = os.getenv(ENV_VARIABLE_FUSEKI_PORT)
+
+if not fuseki_host or not fuseki_port: 
+    error_message = f"❌ Error: {ENV_VARIABLE_FUSEKI_HOST} or {ENV_VARIABLE_FUSEKI_PORT} missing."
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+fuseki_query_endpoint = f"http://{fuseki_host}:{fuseki_port}/apex-bom/sparql"
+
+_LOG_QUERY_SNIP_LEN = 200
+
+
+class SkillExecutionError(RuntimeError):
+    """Fuseki or transport failure while running a skill query."""
 
 
 # MODELS
@@ -109,80 +134,162 @@ class MostComplexSystemResponse(BaseModel):
         return f"{header}\n{entries}"
 
 
+class VariantMetricEntry(BaseModel):
+    variant_code: str
+    value: float
+
+    def __str__(self) -> str:
+        if self.value == int(self.value):
+            return f"{self.variant_code}: {int(self.value)}"
+        return f"{self.variant_code}: {self.value:,.2f}"
+
+
+class CompareVariantsResponse(BaseModel):
+    skill: str = "compare_variants"
+    metric: str
+    system_name: Optional[str]
+    variants: List[VariantMetricEntry]
+
+    def __str__(self) -> str:
+        scope = f" (system: '{self.system_name}')" if self.system_name else " (all systems)"
+        labels = {
+            "total_parts": "total part count (sum of quantities)",
+            "total_weight": "total weight (kg)",
+            "total_cost": "total material cost (GBP)",
+        }
+        header = f"--- Variant comparison: {labels.get(self.metric, self.metric)}{scope} ---"
+        if not self.variants:
+            return f"{header}\nNo data found."
+        entries = "\n".join(f"  {e}" for e in self.variants)
+        return f"{header}\n{entries}"
+
+
 # UTILITIES
 def _normalize_variant_code(variant_code: str) -> str:
-    ERROR_MESSAGE = f"Invalid variant_code '{variant_code}'. Must be one of {VALID_VARIANTS}"
+    ERROR_MESSAGE = f"Invalid variant_code '{variant_code}'. Must be one of {VARIANT_CODES}"
 
     normalized = variant_code.strip().upper()
-    if normalized not in VALID_VARIANTS:
-        logger.error(ERROR_MESSAGE)
-        raise ValueError(ERROR_MESSAGE)
-
-    return normalized
-
-def _normalize_system(system_name : str) -> str: 
-    ERROR_MESSAGE = f"Invalid system_name '{system_name}'. Must be one of {VALID_SYSTEMS}"
-
-    normalized = system_name.strip().upper()
-    if normalized not in VALID_SYSTEMS:
+    if normalized not in VARIANT_CODES:
         logger.error(ERROR_MESSAGE)
         raise ValueError(ERROR_MESSAGE)
 
     return normalized
 
 
+def _normalize_system_name(system_name: Optional[str]) -> Optional[str]:
+    if system_name is None or not str(system_name).strip():
+        return None
 
-def _build_system_filter(system_name: Optional[str], subject_var: str = "?system") -> str:
-    if not system_name:
+    normalised = " ".join(system_name.strip().split()).casefold()
+    for label in SYSTEM_NAMES:
+        if " ".join(label.split()).casefold() == normalised:
+            return label
+    error_message = f"Invalid system_name {system_name!r}. Must be one of {SYSTEM_NAMES}"
+    logger.error(error_message)
+    raise ValueError(error_message)
+
+
+def _ttl_string_literal(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _build_system_filter(canonical_system: Optional[str], subject_var: str = "?system") -> str:
+    if canonical_system is None:
         return ""
-
-    try:
-        normalised_system_name = _normalize_system(system_name)
-    except ValueError: 
-        logger.warning(f"Unable to normalize system name {system_name}. Continuing without system filter.")
-        return ""
-
-
-    escaped = system_name.replace('"', '\\"')
+    escaped = _ttl_string_literal(canonical_system)
     return f'  {subject_var} bom:systemName "{escaped}" .\n'
+
+
+def _normalize_compare_metric(metric: str) -> str:
+    normalized = metric.strip().lower().replace("-", "_")
+    if normalized not in COMPARE_METRICS:
+        msg = f"Invalid metric '{metric}'. Must be one of {COMPARE_METRICS}"
+        logger.error(msg)
+        raise ValueError(msg)
+    return normalized
+
 
 
 def _build_variant_filter(variant_code : str) -> str: 
     normalised_variant_code = _normalize_variant_code(variant_code)
 
-    escaped = normalised_variant_code.replace('"', '\\"')
-    return f' ?variant bom:variantCode "{escaped}" .\n'
-    
+    escaped = _ttl_string_literal(normalised_variant_code)
+    return f' ?vehicle bom:variantCode "{escaped}" .\n'
 
 
 def _run_sparql(query: str) -> List[Dict[str, Any]]:
     HEADERS = {"Accept": "application/sparql-results+json"}
+    query_payload = {"query": query}
 
-    response = requests.post(
-        FUSEKI_QUERY_ENDPOINT,
-        data={"query": query},
-        headers=HEADERS,
-        timeout=FUSEKI_TIMEOUT_SECONDS,
-    )
+    RESULTS_KEY = "results"
+    BINDINGS_KEY = "bindings"
+
+    q_snip = query.strip().replace("\n", " ")[:_LOG_QUERY_SNIP_LEN]
+
+    try:
+        response = requests.post(
+            fuseki_query_endpoint,
+            data=query_payload,
+            headers=HEADERS,
+            timeout=FUSEKI_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exception:
+        logger.exception("SPARQL request failed (query starts {!r})", q_snip)
+        raise SkillExecutionError(
+            f"SPARQL request to Fuseki failed (query starts: {q_snip!r})"
+        ) 
+
     response.raise_for_status()
-    payload = response.json()
-    return payload.get("results", {}).get("bindings", [])
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        text = (response.text or "")[:2000]
+        logger.error(
+            "Fuseki returned non-JSON (status {}), body (truncated): {}",
+            response.status_code,
+            text,
+        )
+        raise SkillExecutionError(
+            f"Fuseki response was not JSON (query starts: {q_snip!r}). "
+            f"Body (truncated): {text[:500]!r}"
+        ) from exc
+
+    if RESULTS_KEY not in payload:
+        text = (response.text or "")[:2000]
+        logger.error("SPARQL JSON missing 'results' (truncated body): {}", text)
+        raise SkillExecutionError(
+            f"SPARQL response missing 'results' (query starts: {q_snip!r}). "
+            f"Body (truncated): {text[:500]!r}"
+        )
+
+    bindings = payload[RESULTS_KEY].get(BINDINGS_KEY)
+    if bindings is None or not isinstance(bindings, list):
+        logger.error(
+            "SPARQL results.bindings missing or not a list: {!r}",
+            payload.get("results"),
+        )
+        raise SkillExecutionError(
+            f"SPARQL results.bindings is not a list (query starts: {q_snip!r})"
+        )
+    return bindings
 
 
 def _binding_value(binding: Dict[str, Any], key: str, fallback: Any = None) -> Any:
     return binding.get(key, {}).get("value", fallback)
 
 
-def count_parts(variant_code: str, system_name: Optional[str] = None) -> Dict[str, Any]:
-    variant_code = _normalize_variant_code(variant_code)
-    system_filter = _build_system_filter(system_name)
+def count_parts(variant_code: str, system_name: Optional[str] = None) -> PartCountResponse:
+    normalized_variant_code = _normalize_variant_code(variant_code)
+    canonical_system = _normalize_system_name(system_name)
+    system_filter = _build_system_filter(canonical_system)
 
     VARIABLE_NAME = "totalParts"
 
     query = f"""{BOM_PREFIX}
         SELECT (COALESCE(SUM(?qty), 0) AS ?{VARIABLE_NAME})
         WHERE {{
-        ?vehicle bom:variantCode "{variant_code}" ;
+        ?vehicle bom:variantCode "{normalized_variant_code}" ;
                 bom:hasSystem ?system .
         {system_filter}  ?system bom:hasAssembly ?assembly .
         ?assembly bom:hasPartLink ?partLink .
@@ -196,22 +303,23 @@ def count_parts(variant_code: str, system_name: Optional[str] = None) -> Dict[st
 
 
     return PartCountResponse(
-        variant_code=variant_code,
-        system_name=system_name,
+        variant_code=normalized_variant_code,
+        system_name=canonical_system,
         total_parts=int(float(raw_val))
     )
 
 
-def count_unique_parts(variant_code: str, system_name: Optional[str] = None) -> Dict[str, Any]:
-    variant_code = _normalize_variant_code(variant_code)
-    system_filter = _build_system_filter(system_name)
+def count_unique_parts(variant_code: str, system_name: Optional[str] = None) -> UniquePartCountResponse:
+    normalized_variant_code = _normalize_variant_code(variant_code)
+    canonical_system = _normalize_system_name(system_name)
+    system_filter = _build_system_filter(canonical_system)
 
     VARIABLE_NAME = "uniqueParts"
 
     query = f"""{BOM_PREFIX}
         SELECT (COUNT(DISTINCT ?part) AS ?{VARIABLE_NAME})
         WHERE {{
-        ?vehicle bom:variantCode "{variant_code}" ;
+        ?vehicle bom:variantCode "{normalized_variant_code}" ;
                 bom:hasSystem ?system .
         {system_filter}  ?system bom:hasAssembly ?assembly .
         ?assembly bom:hasPartLink ?partLink .
@@ -222,18 +330,19 @@ def count_unique_parts(variant_code: str, system_name: Optional[str] = None) -> 
     rows = _run_sparql(query)
     raw_val = _binding_value(rows[0], VARIABLE_NAME, 0) if rows else 0
 
-    return PartCountResponse(
-        variant_code=variant_code,
-        system_name=system_name,
+    return UniquePartCountResponse(
+        variant_code=normalized_variant_code,
+        system_name=canonical_system,
         total_parts=int(float(raw_val))
     )
 
 def heaviest_system(variant_code: Optional[str] = None, top_n: int = 1) -> HeaviestSystemResponse:
     variant_filter = ""
+    normalized_variant_code: Optional[str] = None
 
-    if variant_code:
-        variant_code = _normalize_variant_code(variant_code)
-        variant_filter = f'?vehicle bom:variantCode "{variant_code}" .'
+    if variant_code is not None and str(variant_code).strip():
+        normalized_variant_code = _normalize_variant_code(variant_code)
+        variant_filter = _build_variant_filter(variant_code)
     
     VARIABLE_SYSTEM_NAME = "systemName"
     VARIABLE_WEIGHT = "totalWeightKg"
@@ -267,7 +376,7 @@ def heaviest_system(variant_code: Optional[str] = None, top_n: int = 1) -> Heavi
         )
 
     return HeaviestSystemResponse(
-        variant_code=variant_code,
+        variant_code=normalized_variant_code,
         top_n=top_n,
         systems=results
     )
@@ -275,10 +384,11 @@ def heaviest_system(variant_code: Optional[str] = None, top_n: int = 1) -> Heavi
 
 def costliest_system(variant_code: Optional[str] = None, top_n: int = 1) -> CostliestSystemResponse:
     variant_filter = ""
+    normalized_variant_code: Optional[str] = None
 
-    if variant_code:
-        variant_code = _normalize_variant_code(variant_code)
-        variant_filter = f'?vehicle bom:variantCode "{variant_code}" .'
+    if variant_code is not None and str(variant_code).strip():
+        normalized_variant_code = _normalize_variant_code(variant_code)
+        variant_filter = _build_variant_filter(variant_code)
     
     VARIABLE_SYSTEM_NAME = "systemName"
     VARIABLE_COST = "totalCost"
@@ -313,7 +423,7 @@ def costliest_system(variant_code: Optional[str] = None, top_n: int = 1) -> Cost
         )
 
     return CostliestSystemResponse(
-        variant_code=variant_code,
+        variant_code=normalized_variant_code,
         top_n=top_n,
         systems=results
     )
@@ -321,10 +431,11 @@ def costliest_system(variant_code: Optional[str] = None, top_n: int = 1) -> Cost
 
 def most_complex_system(variant_code: Optional[str] = None, top_n: int = 1) -> MostComplexSystemResponse:
     variant_filter = ""
+    normalized_variant_code: Optional[str] = None
 
-    if variant_code:
-        variant_code = _normalize_variant_code(variant_code)
-        variant_filter = f'?vehicle bom:variantCode "{variant_code}" .'
+    if variant_code is not None and str(variant_code).strip():
+        normalized_variant_code = _normalize_variant_code(variant_code)
+        variant_filter = _build_variant_filter(variant_code)
     
     VARIABLE_SYSTEM_NAME = "systemName"
     VARIABLE_COMPLEXITY = "totalParts"
@@ -356,10 +467,77 @@ def most_complex_system(variant_code: Optional[str] = None, top_n: int = 1) -> M
         )
 
     return MostComplexSystemResponse(
-        variant_code=variant_code,
+        variant_code=normalized_variant_code,
         top_n=top_n,
         systems=results
     )
+
+
+def compare_variants(
+    metric: str,
+    system_name: Optional[str] = None,
+) -> CompareVariantsResponse:
+    metric_key = _normalize_compare_metric(metric)
+    canonical_system = _normalize_system_name(system_name)
+    system_filter = _build_system_filter(canonical_system)
+
+    var_code = "variantCode"
+    var_metric = "metricValue"
+
+    if metric_key == "total_parts":
+        agg = f"(COALESCE(SUM(?qty), 0) AS ?{var_metric})"
+        extra_triples = """
+        ?assembly bom:hasPartLink ?partLink .
+        ?partLink bom:quantity ?qty .
+        """
+    elif metric_key == "total_weight":
+        agg = f"(COALESCE(SUM(?qty * ?weight), 0) AS ?{var_metric})"
+        extra_triples = """
+        ?assembly bom:hasPartLink ?partLink .
+        ?partLink bom:part ?part ;
+                  bom:quantity ?qty .
+        ?part bom:unitWeightKg ?weight .
+        """
+    else:
+        agg = f"(COALESCE(SUM(?qty * ?price), 0) AS ?{var_metric})"
+        extra_triples = """
+        ?assembly bom:hasPartLink ?partLink .
+        ?partLink bom:part ?part ;
+                  bom:quantity ?qty .
+        ?part bom:unitCostGBP ?price .
+        """
+
+    query = f"""{BOM_PREFIX}
+        SELECT ?{var_code} {agg}
+        WHERE {{
+          ?vehicle bom:variantCode ?{var_code} ;
+                   bom:hasSystem ?system .
+          {system_filter}?system bom:hasAssembly ?assembly .
+          {extra_triples}
+        }}
+        GROUP BY ?{var_code}
+        ORDER BY DESC(?{var_metric})
+    """
+
+    rows = _run_sparql(query)
+    variants: List[VariantMetricEntry] = []
+    for row in rows:
+        code = _binding_value(row, var_code)
+        raw = _binding_value(row, var_metric, 0)
+        val = float(raw) if raw is not None else 0.0
+        if metric_key == "total_parts":
+            val = float(int(round(val)))
+        else:
+            val = round(val, 2)
+        if code:
+            variants.append(VariantMetricEntry(variant_code=str(code), value=val))
+
+    return CompareVariantsResponse(
+        metric=metric_key,
+        system_name=canonical_system,
+        variants=variants,
+    )
+
 
 SKILLS = {
     "count_parts": {
@@ -367,13 +545,13 @@ SKILLS = {
         "parameters": {
             "variant_code": {
                 "type": "string",
-                "enum": VALID_VARIANTS,
+                "enum": VARIANT_CODES,
                 "description": "The car variant to query.",
                 "required": True,
             },
             "system_name": {
                 "type": "string",
-                "enum": VALID_SYSTEMS,
+                "enum": SYSTEM_NAMES,
                 "description": "Optional: restrict count to a specific system (e.g. 'Engine').",
                 "required": False,
             },
@@ -386,13 +564,13 @@ SKILLS = {
         "parameters": {
             "variant_code": {
                 "type": "string",
-                "enum": VALID_VARIANTS,
+                "enum": VARIANT_CODES,
                 "description": "The car variant to query.",
                 "required": True,
             },
             "system_name": {
                 "type": "string",
-                "enum": VALID_SYSTEMS,
+                "enum": SYSTEM_NAMES,
                 "description": "Optional: restrict count to a specific system (e.g. 'Engine').",
                 "required": False,
             },
@@ -405,7 +583,7 @@ SKILLS = {
         "parameters" : {
             "variant_code": {
                 "type": "string",
-                "enum": VALID_VARIANTS,
+                "enum": VARIANT_CODES,
                 "description": "Optional: The car variant to query. If omitted, queries across the entire fleet.",
                 "required": False,
             },
@@ -417,19 +595,100 @@ SKILLS = {
         },
         "returns": "HeaviestSystemResponse object — list of top N systems and their weights in kg",
         "function": heaviest_system,
-    }
+    },
+    "costliest_system": {
+        "description": (
+            "Fetch the system(s) with highest total material cost (sum of quantity × unit cost) "
+            "for one variant, or across the entire fleet if variant is omitted."
+        ),
+        "parameters": {
+            "variant_code": {
+                "type": "string",
+                "enum": VARIANT_CODES,
+                "description": "Optional: the variant to query. If omitted, aggregates across all variants.",
+                "required": False,
+            },
+            "top_n": {
+                "type": "integer",
+                "description": "Optional: number of top costliest systems to return (default is 1).",
+                "required": False,
+            },
+        },
+        "returns": "CostliestSystemResponse — list of top N systems and total cost in GBP",
+        "function": costliest_system,
+    },
+    "most_complex_system": {
+        "description": (
+            "Return the system(s) with the highest part count (sum of quantities over all PartLinks) "
+            "for one variant, or across the fleet if variant is omitted."
+        ),
+        "parameters": {
+            "variant_code": {
+                "type": "string",
+                "enum": VARIANT_CODES,
+                "description": "Optional: the variant to query. If omitted, aggregates across all variants.",
+                "required": False,
+            },
+            "top_n": {
+                "type": "integer",
+                "description": "Optional: number of top systems by complexity to return (default is 1).",
+                "required": False,
+            },
+        },
+        "returns": "MostComplexSystemResponse — list of top N systems and total part quantities",
+        "function": most_complex_system,
+    },
+    "compare_variants": {
+        "description": (
+            "Compare all five Apex variants (SEDAN, SUV, COUPE, HATCH, ESTATE) on one metric: "
+            "total_parts (sum of BOM quantities), total_weight (kg), or total_cost (GBP material cost)."
+        ),
+        "parameters": {
+            "metric": {
+                "type": "string",
+                "enum": COMPARE_METRICS,
+                "description": "Metric to compare across variants.",
+                "required": True,
+            },
+            "system_name": {
+                "type": "string",
+                "enum": SYSTEM_NAMES,
+                "description": "Optional: limit the comparison to one system (e.g. Engine).",
+                "required": False,
+            },
+        },
+        "returns": "CompareVariantsResponse — per-variant aggregated values, highest first",
+        "function": compare_variants,
+    },
 }
 
 
 if __name__ == "__main__":
-    print(count_parts('SEDAN', 'Engine'))
-    print(count_unique_parts('SEDAN', 'Engine'))
-    print(heaviest_system('SEDAN', 5))
-    print(heaviest_system(top_n = 5))
-
-    print(costliest_system('SEDAN', 5))
-    print(costliest_system(top_n=5))
+    # print(count_parts('SEDAN', 'Engine'))
 
 
-    print(most_complex_system('SEDAN' , 5))
-    print(most_complex_system(top_n=5))
+    for variant in VARIANT_CODES:
+        for system in SYSTEM_NAMES:
+            print(count_parts(variant, system))
+        print(count_parts(variant))
+        
+    
+    # for system in VARIANT_CODES: 
+    #     print(count_unique_parts(system))
+        
+        
+
+
+
+    # print(count_unique_parts('SEDAN', 'Engine'))
+    # print(heaviest_system('SEDAN', 5))
+    # print(heaviest_system(top_n = 5))
+
+    # print(costliest_system('SEDAN', 5))
+    # print(costliest_system(top_n=5))
+
+
+    # print(most_complex_system('SEDAN' , 5))
+    # print(most_complex_system(top_n=5))
+    # print(compare_variants("total_cost"))
+    # print(compare_variants("total_weight", "Engine"))
