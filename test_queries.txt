@@ -1,0 +1,23 @@
+Ask a BOM question (or 'quit'): How many parts in total are in the BOM for the SUV?
+The total number of parts in the BOM for the SUV variant is 626.
+
+Ask a BOM question (or 'quit'): How many unique parts does the Sedan have?
+The Sedan has a total of 166 unique parts.
+
+Ask a BOM question (or 'quit'): Which system is the heaviest across all variants?
+The heaviest system across all variants is the Electrical & Electronics system, weighing 2059.41 kg.
+
+Ask a BOM question (or 'quit'): What is the most expensive system in the Coupé?
+The most expensive system in the Coupé is the Electrical & Electronics system, with a total cost of $22,588.13.
+
+Ask a BOM question (or 'quit'): Which car variant has the most complex Suspension system?
+The ESTATE variant has the most complex Suspension system with a total of 93 parts.
+
+Ask a BOM question (or 'quit'): Compare the total material cost of all five variants.
+The total material costs for the variants are as follows: HATCH - 121,016.54, SUV - 89,689.45, SEDAN - 77,467.58, ESTATE - 77,149.10, and COUPE - 73,859.25. The HATCH variant has the highest total material cost.
+
+Ask a BOM question (or 'quit'): How many parts does the Estate's Electrical system have?
+The Estate's Electrical & Electronics system has a total of 87 parts.
+
+Ask a BOM question (or 'quit'): What is the total weight of the Engine system in the Hatchback?
+The total weight of the Engine system in the Hatchback variant is 440.56 kg.
