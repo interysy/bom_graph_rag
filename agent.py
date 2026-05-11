@@ -23,6 +23,8 @@ from skills import (
     most_complex_system,
 )
 
+from generate_bom import SYSTEMS
+
 load_dotenv()
 
 DEFAULT_OLLAMA_CHAT_MODEL = "llama3.1:8b"
@@ -192,12 +194,34 @@ class LangChainBOMAgent:
         schemas = _skill_schemas_json(self.tools_schema)
         return (
             "You are a routing gate for an automotive BOM query system.\n"
-            "Respond with ONE JSON object only (no markdown, no extra text).\n"
-            "Keys: use_tools (boolean), suggested_skill (string or null), "
-            "suggested_parameters (object), reason (string).\n\n"
+            "Return EXACTLY one JSON object (no markdown, no extra text):\n"
+            '{"use_tools": <bool>, "suggested_skill": <string|null>, "suggested_parameters": <object>, "reason": <string>}.\n\n'
+            "Decision checklist (apply in order):\n"
+            "1) If the question mentions BOM/variant/system/parts/cost/weight, set use_tools=true.\n"
+            "2) If asks to compare variants, rank variants, or asks 'which variant' -> compare_variants.\n"
+            "3) If one variant + count of parts -> count_parts.\n"
+            "4) If one variant + unique/distinct parts -> count_unique_parts.\n"
+            "5) If asks heaviest/most expensive/most complex SYSTEM -> "
+            "heaviest_system / costliest_system / most_complex_system.\n"
+            "6) For #5, include variant_code only if user names a variant; otherwise omit variant_code.\n"
+            "7) If a system is explicitly named for cross-variant comparison, prefer compare_variants with system_name.\n"
+            "8) Only set use_tools=false when the question is clearly unrelated to automotive BOM data.\n\n"
+            "Parameter rules:\n"
+            "- variant_code must be one of: SEDAN, SUV, COUPE, HATCH, ESTATE.\n"
+            "- system_name must be one of: {SYSTEMS}.\n"
+            "- Use canonical system_name from tool enums.\n"
+            "- Do not invent parameters not in schema.\n\n"
+            "Few-shot JSON examples:\n"
+            "Q: Which variant has the largest part volume in Suspension & Steering?\n"
+            '{"use_tools": true, "suggested_skill": "compare_variants", "suggested_parameters": {"metric": "total_parts", "system_name": "Suspension & Steering"}, "reason": "Cross-variant comparison on one named system; complexity maps to total_parts."}\n\n'
+            "Q: For the Hatch variant, what is the total weight contribution of the Engine system?\n"
+            '{"use_tools": true, "suggested_skill": "compare_variants", "suggested_parameters": {"metric": "total_weight", "system_name": "Engine"}, "reason": "Need system-weight metric by variant; compare_variants returns per-variant values including HATCH."}\n\n'
+            "Q: Give me the distinct part count for the Coupe variant.\n"
+            '{"use_tools": true, "suggested_skill": "count_unique_parts", "suggested_parameters": {"variant_code": "COUPE"}, "reason": "Single-variant unique/distinct part query."}\n\n'
+            "Q: What engineering system carries the most weight fleet-wide?\n"
+            '{"use_tools": true, "suggested_skill": "heaviest_system", "suggested_parameters": {}, "reason": "System-level heaviest query across all variants."}\n\n'
             f"Available skills:\n{schemas}"
         )
-    
     def _synthesis_system_prompt(self) -> str:
         return (
             "You are a helpful engineering assistant for an automotive company.\n"
