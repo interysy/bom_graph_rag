@@ -83,12 +83,12 @@ bom:hasPartLink
     rdfs:range bom:PartLink ;
     rdfs:comment "Assembly references PartLink nodes carrying quantity."@en .
 
-bom:partLinkHasPart
+bom:part
     a owl:ObjectProperty ;
     rdfs:label "part"@en ;
     rdfs:domain bom:PartLink ;
     rdfs:range bom:Part ;
-    rdfs:comment "Part referenced by a PartLink."@en .
+    rdfs:comment "Part referenced by a PartLink (reified assembly usage)."@en .
 
 #################################################################
 # Inverse Object Properties
@@ -124,7 +124,7 @@ bom:isPartLinkOf
 
 bom:partUsedInLink
     a owl:ObjectProperty ;
-    owl:inverseOf bom:partLinkHasPart ;
+    owl:inverseOf bom:part ;
     rdfs:label "is part used in link"@en ;
     rdfs:domain bom:Part ;
     rdfs:range bom:PartLink .
