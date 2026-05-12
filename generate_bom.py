@@ -316,7 +316,6 @@ def uid(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 def clean_id(text: str) -> str:
-    """Removes characters that are illegal in RDF URIs."""
     return text.lower().replace(" ", "_").replace("&", "and").replace("/", "_")
 
 
