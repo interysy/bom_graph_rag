@@ -34,7 +34,6 @@ fuseki_query_endpoint = f"http://{fuseki_host}:{fuseki_port}/apex-bom/sparql"
 
 _LOG_QUERY_SNIP_LEN = 200
 
-
 class SkillExecutionError(RuntimeError):
     """Fuseki or transport failure while running a skill query."""
 
@@ -490,17 +489,17 @@ def compare_variants(
     canonical_system = _normalize_system_name(system_name)
     system_filter = _build_system_filter(canonical_system)
 
-    var_code = "variantCode"
-    var_metric = "metricValue"
+    variant_code = "variantCode"
+    metric_value = "metricValue"
 
     if metric_key == "total_parts":
-        agg = f"(COALESCE(SUM(?qty), 0) AS ?{var_metric})"
+        agg = f"(COALESCE(SUM(?qty), 0) AS ?{metric_value})"
         extra_triples = """
         ?assembly bom:hasPartLink ?partLink .
         ?partLink bom:quantity ?qty .
         """
     elif metric_key == "total_weight":
-        agg = f"(COALESCE(SUM(?qty * ?weight), 0) AS ?{var_metric})"
+        agg = f"(COALESCE(SUM(?qty * ?weight), 0) AS ?{metric_value})"
         extra_triples = """
         ?assembly bom:hasPartLink ?partLink .
         ?partLink bom:part ?part ;
@@ -508,7 +507,7 @@ def compare_variants(
         ?part bom:unitWeightKg ?weight .
         """
     else:
-        agg = f"(COALESCE(SUM(?qty * ?price), 0) AS ?{var_metric})"
+        agg = f"(COALESCE(SUM(?qty * ?price), 0) AS ?{metric_value})"
         extra_triples = """
         ?assembly bom:hasPartLink ?partLink .
         ?partLink bom:part ?part ;
@@ -517,27 +516,28 @@ def compare_variants(
         """
 
     query = f"""{BOM_PREFIX}
-        SELECT ?{var_code} {agg}
+        SELECT ?{variant_code} {agg}
         WHERE {{
-          ?vehicle bom:variantCode ?{var_code} ;
+          ?vehicle bom:variantCode ?{variant_code} ;
                    bom:hasSystem ?system .
           {system_filter}?system bom:hasAssembly ?assembly .
           {extra_triples}
         }}
-        GROUP BY ?{var_code}
-        ORDER BY DESC(?{var_metric})
+        GROUP BY ?{variant_code}
+        ORDER BY DESC(?{metric_value})
     """
 
     rows = _run_sparql(query)
     variants: List[VariantMetricEntry] = []
     for row in rows:
-        code = _binding_value(row, var_code)
-        raw = _binding_value(row, var_metric, 0)
+        code = _binding_value(row, variant_code)
+        raw = _binding_value(row, metric_value, 0)
         val = float(raw) if raw is not None else 0.0
         if metric_key == "total_parts":
             val = float(int(round(val)))
         else:
             val = round(val, 2)
+
         if code:
             variants.append(VariantMetricEntry(variant_code=str(code), value=val))
 
@@ -706,34 +706,3 @@ SKILLS = {
         "function": compare_variants,
     },
 }
-
-
-if __name__ == "__main__":
-    # print(count_parts('SEDAN', 'Engine'))
-
-
-    for variant in VARIANT_CODES:
-        for system in SYSTEM_NAMES:
-            print(count_parts(variant, system))
-        print(count_parts(variant))
-        
-    
-    # for system in VARIANT_CODES: 
-    #     print(count_unique_parts(system))
-        
-        
-
-
-
-    print(count_unique_parts('SEDAN', 'Engine'))
-    print(heaviest_system('SEDAN', 5))
-    print(heaviest_system(top_n = 5))
-
-    print(costliest_system('SEDAN', 5))
-    print(costliest_system(top_n=5))
-
-
-    print(most_complex_system('SEDAN' , 5))
-    print(most_complex_system(top_n=5))
-    print(compare_variants("total_cost"))
-    print(compare_variants("total_weight", "Engine"))
