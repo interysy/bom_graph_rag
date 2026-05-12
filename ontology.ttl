@@ -5,7 +5,6 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 
-
 <http://ibom.ai/ontology/bom>
     a owl:Ontology ;
     rdfs:label "Apex Automotive BOM Ontology"@en ;
@@ -48,7 +47,6 @@ bom:PartLink
 #################################################################
 # Object Properties
 #################################################################
-
 
 
 bom:hasSystem
@@ -181,7 +179,6 @@ bom:partName
     rdfs:domain bom:Part ;
     rdfs:range xsd:string ;
     rdfs:comment "Human-readable part name."@en .
-
 
 bom:partNumber
     a owl:DatatypeProperty ;
